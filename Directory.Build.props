@@ -1,0 +1,30 @@
+<Project>
+
+  <PropertyGroup>
+    <ProjectName>nuget-merge</ProjectName>
+    <Version>1.0.0</Version>
+    <Author>Kira-NT</Author>
+    <ReleaseYear>2025</ReleaseYear>
+    <PackageTags>nuget nupkg packages packaging merge tool</PackageTags>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <NuGetAudit>false</NuGetAudit>
+    <RollForward>major</RollForward>
+    <PublishRelease>true</PublishRelease>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <CheckEolTargetFramework>false</CheckEolTargetFramework>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+    <DefineConstants>$(DefineConstants)$(FeatureFlags.Replace("#",";"))</DefineConstants>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <BeforeMicrosoftNETSdkTargets>$(MSBuildThisFileDirectory)Directory.Publish.targets</BeforeMicrosoftNETSdkTargets>
+  </PropertyGroup>
+
+</Project>

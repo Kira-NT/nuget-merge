@@ -1,0 +1,78 @@
+<Project>
+
+  <PropertyGroup>
+    <Version Condition="'$(Version)' == ''">0.0.1</Version>
+    <Version Condition="!$(GITHUB_REF.StartsWith('refs/tags/')) And '$(GITHUB_RUN_NUMBER)' != ''">$(Version)-build.$(GITHUB_RUN_NUMBER)</Version>
+    <Authors Condition="'$(Authors)' == ''">$(Author)</Authors>
+    <Company Condition="'$(Company)' == ''">$(Authors)</Company>
+    <Copyright Condition="'$(Copyright)' == '' And '$(ReleaseYear)' != '' And '$([System.DateTime]::Now.Year)' != '$(ReleaseYear)'">Copyright © $(ReleaseYear)-$([System.DateTime]::Now.Year) $(Authors)</Copyright>
+    <Copyright Condition="'$(Copyright)' == '' And '$(ReleaseYear)' != ''">Copyright © $(ReleaseYear) $(Authors)</Copyright>
+    <Copyright Condition="'$(Copyright)' == ''">Copyright © $([System.DateTime]::Now.Year) $(Authors)</Copyright>
+    <ProjectName Condition="'$(ProjectName)' == '' And '$(RepositoryUrl)' == ''">$([System.IO.Path]::GetFileNameWithoutExtension('$([System.IO.Directory]::GetFiles(`$(MSBuildThisFileDirectory)`, `*.sln`)[0])'))</ProjectName>
+    <RepositoryUrl Condition="'$(RepositoryUrl)' == '' And '$(Author)' != '' And '$(ProjectName)' != ''">https://github.com/$(Author)/$(ProjectName)</RepositoryUrl>
+    <RepositoryType Condition="'$(RepositoryType)' == ''">git</RepositoryType>
+    <PackageProjectUrl Condition="'$(PackageProjectUrl)' == ''">$(RepositoryUrl)</PackageProjectUrl>
+    <PublishUpxCompressed Condition="'$(PublishUpxCompressed)' == ''">$(PublishLzmaCompressed)</PublishUpxCompressed>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsPackable)' == 'true' Or '$(PackAsTool)' == 'true'">
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <PackageReadmeFile Condition="'$(PackageReadmeFile)' == ''">README.md</PackageReadmeFile>
+    <PackageLicenseFile Condition="'$(PackageLicenseFile)' == ''">LICENSE.md</PackageLicenseFile>
+    <PackageIcon Condition="'$(PackageIcon)' == ''">icon.png</PackageIcon>
+    <EnablePackageValidation Condition="'$(EnablePackageValidation)' == ''">true</EnablePackageValidation>
+    <GenerateDocumentationFile Condition="'$(GenerateDocumentationFile)' == '' And '$(PackAsTool)' == 'true'">false</GenerateDocumentationFile>
+    <GenerateDocumentationFile Condition="'$(GenerateDocumentationFile)' == ''">true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Condition="Exists('$(PackageReadmeFile)')" Include="$(PackageReadmeFile)" Pack="true" PackagePath="" Visible="false" />
+    <None Condition="!Exists('$(PackageReadmeFile)')" Include="$(MSBuildThisFileDirectory)$(PackageReadmeFile)" Pack="true" PackagePath="" Visible="false" />
+
+    <None Condition="Exists('$(PackageLicenseFile)')" Include="$(PackageLicenseFile)" Pack="true" PackagePath="" Visible="false" />
+    <None Condition="!Exists('$(PackageLicenseFile)')" Include="$(MSBuildThisFileDirectory)$(PackageLicenseFile)" Pack="true" PackagePath="" Visible="false" />
+
+    <None Condition="Exists('$(PackageIcon)')" Include="$(PackageIcon)" Pack="true" PackagePath="" Visible="false" />
+    <None Condition="!Exists('$(PackageIcon)') And Exists('media/$(PackageIcon)')" Include="media/$(PackageIcon)" Pack="true" PackagePath="" Visible="false" />
+    <None Condition="!Exists('$(PackageIcon)') And !Exists('media/$(PackageIcon)')" Include="$(MSBuildThisFileDirectory)media/$(PackageIcon)" Pack="true" PackagePath="" Visible="false" />
+
+    <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="Nullable" Version="1.3.1" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(PublishUpxCompressed)' == 'true'">
+    <PackageReference Include="PublishAotCompressed" Version="1.0.5" PrivateAssets="All" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(PublishAot)' == 'true' Or '$(PublishIlc)' == 'true' Or '$(PublishUpxCompressed)' == 'true'">
+    <PublishIlc>true</PublishIlc>
+    <DefineConstants>$(DefineConstants);NATIVE_AOT</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(PublishIlc)' == 'true' And ('$(OutputType)' == 'Exe' Or '$(OutputType)' == 'WinExe')">
+    <PublishAot>true</PublishAot>
+    <PublishTrimmed Condition="'$(PublishTrimmed)' == ''">true</PublishTrimmed>
+    <TrimMode Condition="'$(TrimMode)' == ''">full</TrimMode>
+    <TrimmerSingleWarn Condition="'$(TrimmerSingleWarn)' == ''">true</TrimmerSingleWarn>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
+    <TargetFrameworks>$([System.Text.RegularExpressions.Regex]::Replace($(TargetFrameworks), `(?!net([89]|\d\d+)(\.\d+)+(-[\w.-]+)?)(?&lt;=^|;)[\w.-]+(;|$)`, '').Trim(';'))</TargetFrameworks>
+
+    <DebuggerSupport Condition="'$(DebuggerSupport)' == ''">false</DebuggerSupport>
+    <EnableUnsafeBinaryFormatterSerialization Condition="'$(EnableUnsafeBinaryFormatterSerialization)' == ''">false</EnableUnsafeBinaryFormatterSerialization>
+    <EnableUnsafeUTF7Encoding Condition="'$(EnableUnsafeUTF7Encoding)' == ''">false</EnableUnsafeUTF7Encoding>
+    <EventSourceSupport Condition="'$(EventSourceSupport)' == ''">false</EventSourceSupport>
+    <HttpActivityPropagationSupport Condition="'$(HttpActivityPropagationSupport)' == ''">false</HttpActivityPropagationSupport>
+    <InvariantGlobalization Condition="'$(InvariantGlobalization)' == ''">true</InvariantGlobalization>
+    <MetadataUpdaterSupport Condition="'$(MetadataUpdaterSupport)' == ''">false</MetadataUpdaterSupport>
+    <MetricsSupport Condition="'$(MetricsSupport)' == ''">false</MetricsSupport>
+    <OptimizationPreference Condition="'$(OptimizationPreference)' == ''">size</OptimizationPreference>
+    <StackTraceSupport Condition="'$(StackTraceSupport)' == ''">false</StackTraceSupport>
+    <UseSystemResourceKeys Condition="'$(UseSystemResourceKeys)' == ''">true</UseSystemResourceKeys>
+    <XmlResolverIsNetworkingEnabledByDefault Condition="'$(XmlResolverIsNetworkingEnabledByDefault)' == ''">false</XmlResolverIsNetworkingEnabledByDefault>
+  </PropertyGroup>
+
+</Project>
