@@ -1,0 +1,95 @@
+name: release
+
+on:
+  release:
+    types:
+      - published
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+  DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: true
+  NUGET_XMLDOC_MODE: skip
+  BUILD_OUTPUT: ${{ github.workspace }}/dist
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@main
+
+      - name: Create NuGet packages
+        run: dotnet pack -o "${{ env.BUILD_OUTPUT }}"
+
+      - name: Upload NuGet packages to GitHub
+        uses: Kira-NT/mc-publish@v3.3
+        with:
+          files: ${{ env.BUILD_OUTPUT }}/*.nupkg
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload NuGet packages to nuget.org
+        run: dotnet nuget push "${{ env.BUILD_OUTPUT }}/*.nupkg" --api-key "${{ secrets.NUGET_TOKEN }}" --source "https://api.nuget.org/v3/index.json"
+
+  compile:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            rid: linux-glibc-x64
+            type: UpxCompressed
+
+          - runner: ubuntu-24.04-arm
+            rid: linux-glibc-arm64
+            type: UpxCompressed
+
+          - runner: windows-latest
+            rid: windows-x64
+            type: UpxCompressed
+
+          - runner: windows-11-arm
+            rid: windows-arm64
+            type: Ilc
+
+          - runner: macos-latest
+            rid: macos-arm64
+            type: Ilc
+
+          - runner: macos-13
+            rid: macos-x64
+            type: Ilc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@main
+
+      - name: Build
+        run: dotnet publish -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
+
+      - name: Compress artifacts
+        if: ${{ startsWith(matrix.runner, 'windows') }}
+        run: |
+          $version = & "${{ env.BUILD_OUTPUT }}/nuget-merge.exe" --version
+          Compress-Archive -Path "${{ env.BUILD_OUTPUT }}/nuget-merge.exe" -DestinationPath "${{ env.BUILD_OUTPUT }}/nuget-merge-$version-${{ matrix.rid }}.zip"
+
+      - name: Compress artifacts
+        if: ${{ !startsWith(matrix.runner, 'windows') }}
+        run: |
+          chmod +x "${{ env.BUILD_OUTPUT }}/nuget-merge"
+          version=$("${{ env.BUILD_OUTPUT }}/nuget-merge" --version)
+          tar -czf "${{ env.BUILD_OUTPUT }}/nuget-merge-$version-${{ matrix.rid }}.tar.gz" -C "${{ env.BUILD_OUTPUT }}" nuget-merge
+
+      - name: Upload artifacts to GitHub
+        uses: Kira-NT/mc-publish@v3.3
+        with:
+          files: ${{ env.BUILD_OUTPUT }}/nuget-merge-*-*.*
+          github-token: ${{ secrets.GITHUB_TOKEN }}

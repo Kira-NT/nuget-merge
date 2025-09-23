@@ -1,0 +1,99 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: false
+  DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: true
+  NUGET_XMLDOC_MODE: skip
+  BUILD_OUTPUT: ${{ github.workspace }}/dist
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@main
+
+      - name: Create NuGet packages
+        run: dotnet pack -o "${{ env.BUILD_OUTPUT }}"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-merge-tool
+          if-no-files-found: error
+          path: ${{ env.BUILD_OUTPUT }}/*.nupkg
+
+  compile:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            rid: linux-glibc-x64
+            type: UpxCompressed
+
+          - runner: ubuntu-24.04-arm
+            rid: linux-glibc-arm64
+            type: UpxCompressed
+
+          - runner: windows-latest
+            rid: windows-x64
+            type: UpxCompressed
+            extension: .exe
+
+          - runner: windows-11-arm
+            rid: windows-arm64
+            type: Ilc
+            extension: .exe
+
+          - runner: macos-latest
+            rid: macos-arm64
+            type: Ilc
+
+          - runner: macos-13
+            rid: macos-x64
+            type: Ilc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@main
+
+      - name: Build
+        run: dotnet publish -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
+
+      - name: Get version
+        id: get-version
+        shell: bash
+        run: |
+          chmod +x "${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}"
+          version=$("${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}" --version)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-merge-${{ steps.get-version.outputs.version }}-${{ matrix.rid }}
+          if-no-files-found: error
+          path: ${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: [pack, compile]
+    steps:
+      - name: Merge artifacts
+        uses: actions/upload-artifact/merge@v4
+        with:
+          name: artifacts
+          delete-merged: true
+          separate-directories: true
