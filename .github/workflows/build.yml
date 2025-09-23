@@ -70,7 +70,7 @@ jobs:
         uses: actions/setup-dotnet@main
 
       - name: Build
-        run: dotnet publish -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
+        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
 
       - name: Get version
         id: get-version
@@ -78,7 +78,7 @@ jobs:
         run: |
           chmod +x "${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}"
           version=$("${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}" --version)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version=${version%%+*}" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

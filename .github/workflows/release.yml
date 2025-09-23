@@ -4,6 +4,16 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      github-tag:
+        description: The GitHub tag (e.g., v1.2.3) to build and release from.
+        type: string
+        required: true
+      skip-nuget-upload:
+        description: Set to true to skip publishing the NuGet package during this run.
+        type: boolean
+        default: false
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -13,6 +23,7 @@ env:
   DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: true
   NUGET_XMLDOC_MODE: skip
   BUILD_OUTPUT: ${{ github.workspace }}/dist
+  CI_RELEASE: true
 
 permissions:
   contents: write
@@ -33,9 +44,11 @@ jobs:
         uses: Kira-NT/mc-publish@v3.3
         with:
           files: ${{ env.BUILD_OUTPUT }}/*.nupkg
+          github-tag: ${{ inputs.github-tag || '${undefined}' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload NuGet packages to nuget.org
+        if: ${{ !inputs.skip-nuget-upload }}
         run: dotnet nuget push "${{ env.BUILD_OUTPUT }}/*.nupkg" --api-key "${{ secrets.NUGET_TOKEN }}" --source "https://api.nuget.org/v3/index.json"
 
   compile:
@@ -73,23 +86,27 @@ jobs:
         uses: actions/setup-dotnet@main
 
       - name: Build
-        run: dotnet publish -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
+        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
 
-      - name: Compress artifacts
-        if: ${{ startsWith(matrix.runner, 'windows') }}
-        run: |
-          $version = & "${{ env.BUILD_OUTPUT }}/nuget-merge.exe" --version
-          Compress-Archive -Path "${{ env.BUILD_OUTPUT }}/nuget-merge.exe" -DestinationPath "${{ env.BUILD_OUTPUT }}/nuget-merge-$version-${{ matrix.rid }}.zip"
-
-      - name: Compress artifacts
-        if: ${{ !startsWith(matrix.runner, 'windows') }}
+      - name: Get version
+        id: get-version
+        shell: bash
         run: |
           chmod +x "${{ env.BUILD_OUTPUT }}/nuget-merge"
           version=$("${{ env.BUILD_OUTPUT }}/nuget-merge" --version)
-          tar -czf "${{ env.BUILD_OUTPUT }}/nuget-merge-$version-${{ matrix.rid }}.tar.gz" -C "${{ env.BUILD_OUTPUT }}" nuget-merge
+          echo "version=${version%%+*}" >> "$GITHUB_OUTPUT"
+
+      - name: Zip artifacts
+        if: ${{ startsWith(matrix.runner, 'windows') }}
+        run: Compress-Archive -Path "${{ env.BUILD_OUTPUT }}/nuget-merge.exe" -DestinationPath "nuget-merge-${{ steps.get-version.outputs.version }}-${{ matrix.rid }}.zip"
+
+      - name: Tar artifacts
+        if: ${{ !startsWith(matrix.runner, 'windows') }}
+        run: tar -czf "nuget-merge-${{ steps.get-version.outputs.version }}-${{ matrix.rid }}.tar.gz" -C "${{ env.BUILD_OUTPUT }}" nuget-merge
 
       - name: Upload artifacts to GitHub
         uses: Kira-NT/mc-publish@v3.3
         with:
-          files: ${{ env.BUILD_OUTPUT }}/nuget-merge-*-*.*
+          files: nuget-merge-*-*.*
+          github-tag: ${{ inputs.github-tag || '${undefined}' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
