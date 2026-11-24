@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using NuGet.Common;
@@ -9,14 +10,17 @@ namespace NuGetMerge;
 
 public sealed class NuGetPackageBuilder
 {
+    private readonly IReadOnlyList<string> _excludedDependencies;
     private readonly PackageBuilder _package;
 
-    public NuGetPackageBuilder() : this(deterministic: false, logger: null)
+    public NuGetPackageBuilder() : this(deterministic: false, excludedDependencies: Array.Empty<string>(), logger: null)
     {
+        _excludedDependencies = Array.Empty<string>();
     }
 
-    public NuGetPackageBuilder(bool deterministic, ILogger? logger)
+    public NuGetPackageBuilder(bool deterministic, IReadOnlyList<string> excludedDependencies, ILogger? logger)
     {
+        _excludedDependencies = excludedDependencies;
         _package = new(deterministic, logger);
     }
 
@@ -28,9 +32,15 @@ public sealed class NuGetPackageBuilder
 
     public static NuGetPackageBuilder Merge(IEnumerable<IPackageCoreReader> packages, bool deterministic = false, ILogger? logger = null)
     {
-        NuGetPackageBuilder builder = new(deterministic, logger);
+        var excludeSelfDeps = packages
+            .Select(item => item.GetIdentity().Id)
+            .Distinct()
+            .ToImmutableList();
+
+        NuGetPackageBuilder builder = new(deterministic, excludeSelfDeps, logger);
+
         foreach (IPackageCoreReader packageReader in packages)
-            builder.PopulateFrom(packageReader);
+            builder.PopulateFrom(packageReader);        
 
         return builder;
     }
@@ -195,28 +205,27 @@ public sealed class NuGetPackageBuilder
         return defaultFramework;
     }
 
-    private static void AddDependencyGroups(Collection<PackageDependencyGroup> groups, IEnumerable<PackageDependencyGroup> newGroups)
+    private void AddDependencyGroups(Collection<PackageDependencyGroup> mergedGroups, IEnumerable<PackageDependencyGroup> newGroups)
     {
-        if (groups.Count == 0)
-        {
-            groups.AddRange(newGroups);
-            return;
-        }
-
         foreach (PackageDependencyGroup newGroup in newGroups)
         {
-            int oldGroupIndex = FindIndex(groups, d => d.TargetFramework == newGroup.TargetFramework);
+            int oldGroupIndex = FindIndex(mergedGroups, d => d.TargetFramework == newGroup.TargetFramework);
             if (oldGroupIndex < 0)
             {
-                groups.Add(newGroup);
+                mergedGroups.Add(newGroup);
                 continue;
             }
 
-            PackageDependency[] packages = groups[oldGroupIndex].Packages.Concat(newGroup.Packages)
+            PackageDependency[] newGroupPackages = newGroup.Packages
+                .Where(pkg => !_excludedDependencies.Contains(pkg.Id))
+                .ToArray();
+
+            PackageDependency[] packages = mergedGroups[oldGroupIndex].Packages.Concat(newGroupPackages)
                 .GroupBy(static x => x.Id, StringComparer.OrdinalIgnoreCase)
                 .Select(static x => x.First())
                 .ToArray();
-            groups[oldGroupIndex] = new PackageDependencyGroup(newGroup.TargetFramework, packages);
+
+            mergedGroups[oldGroupIndex] = new PackageDependencyGroup(newGroup.TargetFramework, packages);
         }
     }
 
