@@ -3,18 +3,18 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>$(ProjectName)</AssemblyName>
-    <TargetFrameworks>net9.0;netcoreapp3.1</TargetFrameworks>
+    <TargetFrameworks>net11.0;netcoreapp3.1</TargetFrameworks>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <PropertyGroup>
     <PackAsTool>true</PackAsTool>
-    <Description>A .NET tool that lets you merge multiple .nupkg file into a single package.</Description>
+    <Description>A .NET tool that lets you merge multiple .nupkg files into a single package.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.CommandLine" Version="2.0.0-beta7.25380.108" />
-    <PackageReference Include="NuGet.Packaging" Version="6.14.0" />
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="NuGet.Packaging" />
   </ItemGroup>
 
 </Project>

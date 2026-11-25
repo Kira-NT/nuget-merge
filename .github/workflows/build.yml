@@ -70,7 +70,7 @@ jobs:
         uses: actions/setup-dotnet@main
 
       - name: Build
-        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
+        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net11.0 -p:Publish${{ matrix.type }}=true
 
       - name: Get version
         id: get-version

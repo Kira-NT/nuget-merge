@@ -41,7 +41,7 @@ jobs:
         run: dotnet pack -o "${{ env.BUILD_OUTPUT }}"
 
       - name: Upload NuGet packages to GitHub
-        uses: Kira-NT/mc-publish@v3.3
+        uses: Kira-NT/mc-publish@v3
         with:
           files: ${{ env.BUILD_OUTPUT }}/*.nupkg
           github-tag: ${{ inputs.github-tag || '${undefined}' }}
@@ -86,7 +86,7 @@ jobs:
         uses: actions/setup-dotnet@main
 
       - name: Build
-        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net9.0 -p:Publish${{ matrix.type }}=true
+        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net11.0 -p:Publish${{ matrix.type }}=true
 
       - name: Get version
         id: get-version
@@ -105,7 +105,7 @@ jobs:
         run: tar -czf "nuget-merge-${{ steps.get-version.outputs.version }}-${{ matrix.rid }}.tar.gz" -C "${{ env.BUILD_OUTPUT }}" nuget-merge
 
       - name: Upload artifacts to GitHub
-        uses: Kira-NT/mc-publish@v3.3
+        uses: Kira-NT/mc-publish@v3
         with:
           files: nuget-merge-*-*.*
           github-tag: ${{ inputs.github-tag || '${undefined}' }}
