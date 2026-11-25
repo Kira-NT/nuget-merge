@@ -18,16 +18,16 @@ jobs:
   pack:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@main
+        uses: actions/setup-dotnet@6
 
       - name: Create NuGet packages
         run: dotnet pack -o "${{ env.BUILD_OUTPUT }}"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-merge-tool
           if-no-files-found: error
@@ -60,28 +60,30 @@ jobs:
             rid: macos-arm64
             type: Ilc
 
-          - runner: macos-13
+          - runner: macos-15-intel
             rid: macos-x64
             type: Ilc
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup .NET SDK
-        uses: actions/setup-dotnet@main
+        id: dotnet
+        uses: actions/setup-dotnet@6
 
       - name: Build
-        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f net11.0 -p:Publish${{ matrix.type }}=true
+        shell: bash
+        run: dotnet publish src/NuGetMerge -o "${{ env.BUILD_OUTPUT }}" --ucr -f "net$(printf "%s" "${{ steps.dotnet.outputs.dotnet-version }}" | cut -d. -f1-2)" -p:Publish${{ matrix.type }}=true
 
       - name: Get version
         id: get-version
         shell: bash
         run: |
-          chmod +x "${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}"
-          version=$("${{ env.BUILD_OUTPUT }}/nuget-merge${{ matrix.extension }}" --version)
+          chmod +x "${{ env.BUILD_OUTPUT }}/nuget-merge"
+          version=$("${{ env.BUILD_OUTPUT }}/nuget-merge" --version)
           echo "version=${version%%+*}" >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-merge-${{ steps.get-version.outputs.version }}-${{ matrix.rid }}
           if-no-files-found: error
