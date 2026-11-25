@@ -9,7 +9,7 @@
 
 For example, if you build .NET Standard 2.0 and .NET Standard 2.1 versions of your library from different source trees, or if you build a tool or an analyzer separately from the library it should be shipped with, `nuget-merge` can combine the resulting packages into one, so you don't need to distribute them separately. Admittedly, this is a fairly niche scenario, and you'll probably never find yourself in one, but when you *do* need something like this, you *really* need it.
 
-This tool, however, is **not** intended for bundling dependencies with your package. If that's what you are looking for, please see [the official MSBuild docs on the topic](https://learn.microsoft.com/en-us/visualstudio/msbuild/tutorial-custom-task-code-generation?view=vs-2022#bundle-dependencies-into-the-package). There's no need to use external tools for that.
+Additionally, you can use `nuget-merge` to bundle dependencies with your NuGet package. Be aware, however, that packages containing any sort of MSBuild integration, for example, are often sensitive to package ID changes, so always make sure to test the output produced by the tool before publishing it. And don't forget to check whether the licenses of the projects you want to bundle with your package allow you to do so!
 
 ----
 

@@ -11,6 +11,10 @@ public sealed class NuGetPackageBuilder
 {
     private readonly PackageBuilder _package;
 
+    private readonly HashSet<string> _packageIds;
+
+    private readonly HashSet<NuGetFramework> _supportedFrameworks;
+
     public NuGetPackageBuilder() : this(deterministic: false, logger: null)
     {
     }
@@ -18,6 +22,8 @@ public sealed class NuGetPackageBuilder
     public NuGetPackageBuilder(bool deterministic, ILogger? logger)
     {
         _package = new(deterministic, logger);
+        _packageIds = [with(StringComparer.OrdinalIgnoreCase)];
+        _supportedFrameworks = [];
     }
 
     public static NuGetPackageBuilder Merge(IEnumerable<string> packagePaths, bool deterministic = false, ILogger? logger = null)
@@ -93,7 +99,76 @@ public sealed class NuGetPackageBuilder
 
     private void PopulateMetadataFrom(IPackageMetadata metadata, Lazy<NuGetFramework?>? defaultFramework)
     {
-        PackageBuilder package = _package;
+        if (!string.IsNullOrEmpty(metadata.Id))
+            _packageIds.Add(metadata.Id);
+
+        if (string.IsNullOrEmpty(_package.Id) || string.Equals(_package.Id, metadata.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            PopulateProperties(_package, metadata);
+            _supportedFrameworks.AddRange(metadata.DependencyGroups.Select(static x => x.TargetFramework).Where(static x => x is not null));
+        }
+
+        AddContentFiles(_package.ContentFiles, metadata.ContentFiles);
+        AddFrameworkReferences(_package.FrameworkReferences, metadata.FrameworkReferences);
+        AddDependencyGroups(_package.DependencyGroups, metadata.DependencyGroups.Select(x => x.TargetFramework is null ? new(defaultFramework?.Value, x.Packages) : x));
+        AddAssemblyReferences(_package.PackageAssemblyReferences, metadata.PackageAssemblyReferences.Select(x => x.TargetFramework is null ? new(defaultFramework?.Value, x.References) : x));
+    }
+
+    public void Save(string path)
+    {
+        using FileStream stream = File.Create(path);
+        Save(stream);
+    }
+
+#if NET5_0_OR_GREATER
+    // NuGet.Packaging is absolutely not trimmer-friendly. In quite a few ways, actually.
+    // Here, for example, when we try to save a package, the library attempts to infer
+    // the minimum applicable manifest version based on the properties we set.
+    // To do that, it looks for `ManifestVersionAttribute`, because of course
+    // we need reflection to check if a couple of properties are null or not.
+    // And if we don't preserve those properties (or rather their metadata)
+    // ourselves, NativeAOT builds of the tool would just crash.
+    // Fun.
+    [DynamicDependency(nameof(ManifestMetadata.Copyright), typeof(ManifestMetadata))]
+    [DynamicDependency(nameof(ManifestMetadata.ReleaseNotes), typeof(ManifestMetadata))]
+    [DynamicDependency(nameof(ManifestMetadata.MinClientVersionString), typeof(ManifestMetadata))]
+#endif
+    public void Save(Stream stream)
+    {
+        FilterDependencyGroups(_package.DependencyGroups, _supportedFrameworks, _packageIds);
+        _package.Save(stream);
+    }
+
+    private static NuGetFramework? GetDefaultFramework(IPackageContentReader package)
+    {
+        // Previous versions of NuGet packages sometimes didn't explicitly specify
+        // a framework for a given dependency group if it could be inferred implicitly.
+        // That's exactly what we do here - we infer the "default" framework for the provided package.
+        // The default framework is the only framework ever mentioned by the package.
+        // If there's more than one or none at all, we return `null`.
+        IEnumerable<NuGetFramework> frameworks = package
+            .GetLibItems().Select(x => x.TargetFramework)
+            .Concat(package.GetBuildItems().Select(x => x.TargetFramework))
+            .Concat(package.GetContentItems().Select(x => x.TargetFramework))
+            .Concat(package.GetToolItems().Select(x => x.TargetFramework))
+            .Concat(package.GetFrameworkItems().Select(x => x.TargetFramework))
+            .Where(x => x is { IsUnsupported: false });
+
+        using IEnumerator<NuGetFramework> enumerator = frameworks.GetEnumerator();
+        if (!enumerator.MoveNext())
+            return null;
+
+        NuGetFramework? defaultFramework = enumerator.Current;
+        while (enumerator.MoveNext())
+        {
+            if (!NuGetFrameworkFullComparer.Instance.Equals(enumerator.Current, defaultFramework))
+                return null;
+        }
+        return defaultFramework;
+    }
+
+    private static void PopulateProperties(PackageBuilder package, IPackageMetadata metadata)
+    {
         if (string.IsNullOrEmpty(package.Id) && metadata.Id is { } id)
             package.Id = id;
 
@@ -138,61 +213,28 @@ public sealed class NuGetPackageBuilder
         package.Authors.AddRange(metadata.Authors ?? []);
         package.Owners.AddRange(metadata.Owners ?? []);
         package.PackageTypes.AddRange((metadata.PackageTypes ?? []).Except(package.PackageTypes));
-
-        AddContentFiles(package.ContentFiles, metadata.ContentFiles);
-        AddFrameworkReferences(package.FrameworkReferences, metadata.FrameworkReferences);
-        AddDependencyGroups(package.DependencyGroups, metadata.DependencyGroups.Select(x => x.TargetFramework is null ? new(defaultFramework?.Value, x.Packages) : x));
-        AddAssemblyReferences(package.PackageAssemblyReferences, metadata.PackageAssemblyReferences.Select(x => x.TargetFramework is null ? new(defaultFramework?.Value, x.References) : x));
     }
 
-    public void Save(string path)
+    private static void FilterDependencyGroups(Collection<PackageDependencyGroup> groups, HashSet<NuGetFramework> supportedFrameworks, HashSet<string> ignoredDependencies)
     {
-        using FileStream stream = File.Create(path);
-        Save(stream);
-    }
-
-#if NET5_0_OR_GREATER
-    // NuGet.Packaging is absolutely not trimmer-friendly. In quite a few ways, actually.
-    // Here, for example, when we try to save a package, the library attempts to infer
-    // the minimum applicable manifest version based on the properties we set.
-    // To do that, it looks for `ManifestVersionAttribute`, because of course
-    // we need reflection to check if a couple of properties are null or not.
-    // And if we don't preserve those properties (or rather their metadata)
-    // ourselves, NativeAOT builds of the tool would just crash.
-    // Fun.
-    [DynamicDependency(nameof(ManifestMetadata.Copyright), typeof(ManifestMetadata))]
-    [DynamicDependency(nameof(ManifestMetadata.ReleaseNotes), typeof(ManifestMetadata))]
-    [DynamicDependency(nameof(ManifestMetadata.MinClientVersionString), typeof(ManifestMetadata))]
-#endif
-    public void Save(Stream stream)
-        => _package.Save(stream);
-
-    private static NuGetFramework? GetDefaultFramework(IPackageContentReader package)
-    {
-        // Previous versions of NuGet packages sometimes didn't explicitly specify
-        // a framework for a given dependency group if it could be inferred implicitly.
-        // That's exactly what we do here - we infer the "default" framework for the provided package.
-        // The default framework is the only framework ever mentioned by the package.
-        // If there's more than one or none at all, we return `null`.
-        IEnumerable<NuGetFramework> frameworks = package
-            .GetLibItems().Select(x => x.TargetFramework)
-            .Concat(package.GetBuildItems().Select(x => x.TargetFramework))
-            .Concat(package.GetContentItems().Select(x => x.TargetFramework))
-            .Concat(package.GetToolItems().Select(x => x.TargetFramework))
-            .Concat(package.GetFrameworkItems().Select(x => x.TargetFramework))
-            .Where(x => x is { IsUnsupported: false });
-
-        using IEnumerator<NuGetFramework> enumerator = frameworks.GetEnumerator();
-        if (!enumerator.MoveNext())
-            return null;
-
-        NuGetFramework? defaultFramework = enumerator.Current;
-        while (enumerator.MoveNext())
+    outer:
+        for (int i = 0, count = groups.Count; i < count; i++)
         {
-            if (!NuGetFrameworkFullComparer.Instance.Equals(enumerator.Current, defaultFramework))
-                return null;
+            PackageDependencyGroup group = groups[i];
+            while (group.TargetFramework is not null && !supportedFrameworks.Contains(group.TargetFramework))
+            {
+                group = groups[i] = groups[--count];
+                groups.RemoveAt(count);
+                if (count == i)
+                    break outer;
+            }
+
+            PackageDependency[] packages = group.Packages
+                .GroupBy(static x => x.Id, StringComparer.OrdinalIgnoreCase)
+                .Where(x => !ignoredDependencies.Contains(x.Key))
+                .Select(static x => x.First()).ToArray();
+            groups[i] = new PackageDependencyGroup(group.TargetFramework, packages);
         }
-        return defaultFramework;
     }
 
     private static void AddDependencyGroups(Collection<PackageDependencyGroup> groups, IEnumerable<PackageDependencyGroup> newGroups)
@@ -212,11 +254,7 @@ public sealed class NuGetPackageBuilder
                 continue;
             }
 
-            PackageDependency[] packages = groups[oldGroupIndex].Packages.Concat(newGroup.Packages)
-                .GroupBy(static x => x.Id, StringComparer.OrdinalIgnoreCase)
-                .Select(static x => x.First())
-                .ToArray();
-            groups[oldGroupIndex] = new PackageDependencyGroup(newGroup.TargetFramework, packages);
+            groups[oldGroupIndex] = new PackageDependencyGroup(newGroup.TargetFramework, groups[oldGroupIndex].Packages.Concat(newGroup.Packages).ToArray());
         }
     }
 
@@ -337,8 +375,7 @@ public sealed class NuGetPackageBuilder
 
     private static int FindIndex<T>(IList<T> list, Func<T, bool> predicate)
     {
-        int count = list.Count;
-        for (int i = 0; i < count; i++)
+        for (int i = 0, count = list.Count; i < count; i++)
         {
             if (predicate(list[i]))
                 return i;
@@ -347,9 +384,7 @@ public sealed class NuGetPackageBuilder
     }
 }
 
-file sealed class PersistentMemoryStream : MemoryStream
+file sealed class PersistentMemoryStream(int capacity) : MemoryStream(capacity)
 {
-    public PersistentMemoryStream(int capacity) : base(capacity) { }
-
     protected override void Dispose(bool disposing) => Position = 0;
 }
